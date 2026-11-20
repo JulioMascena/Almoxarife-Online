@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// Regras de segurança do Almoxarife.
+// Um único login (ID + senha) é compartilhado pela equipe. Só ele lê e grava os dados da obra.
+// Tudo o que não está liberado aqui é negado.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() {
+      return request.auth != null;
+    }
+    function caminhoAcesso() {
+      return /databases/$(database)/documents/config/acesso;
+    }
+    // Verdadeiro só para o login único da obra.
+    function acesso() {
+      return logado() && exists(caminhoAcesso())
+        && get(caminhoAcesso()).data.uid == request.auth.uid;
+    }
+
+    // ---------- Login único ----------
+    // Criado uma única vez. A leitura é pública para o app saber se o login já existe (não guarda senha).
+    match /config/acesso {
+      allow get: if true;
+      allow create: if logado() && !exists(caminhoAcesso())
+        && request.resource.data.uid == request.auth.uid;
+    }
+
+    // ID -> conta interna. Leitura de um ID por vez (necessária para entrar); não é possível listar.
+    match /logins/{id} {
+      allow get: if true;
+      allow create: if logado() && !exists(caminhoAcesso())
+        && existsAfter(caminhoAcesso())
+        && getAfter(caminhoAcesso()).data.uid == request.auth.uid
+        && getAfter(caminhoAcesso()).data.usuario == id;
+    }
+
+    // ---------- Dados da obra ----------
+    match /config/geral {
+      allow read, write: if acesso();
+    }
+
+    match /{colecao}/{docId} {
+      allow read, write: if acesso()
+        && colecao in ['categorias', 'produtos', 'locais', 'funcionarios', 'movimentos'];
+    }
+  }
+}
