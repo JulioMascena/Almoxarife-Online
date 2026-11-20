@@ -1,11 +1,47 @@
 # Almoxarife
 
-Controle de estoque do almoxarifado da obra, com o visual do painel do Tavara: menu lateral verde, cards brancos, fontes Outfit e Work Sans e modo escuro.
+Controle de estoque do almoxarifado da obra com identidade PLUMB: verde militar, terracota, superfícies em cinza concreto e tipografia Oxanium. Estrutura de navegação preservada, com temas claro e escuro em **Configurações → Aparência**, salvos por aparelho. Diretrizes em [DESIGN.md](DESIGN.md); fonte hospedada localmente em `fonts/oxanium/`, com licença OFL incluída.
 
 ## Como funciona
-O site é publicado no **Firebase Hosting** do projeto `almoxarife-online` e os dados ficam no **Firestore** do mesmo projeto. Todos os aparelhos (celular e computador) usam o mesmo login (ID + senha da obra) e veem os mesmos dados em tempo real. Sem internet, os lançamentos ficam guardados no aparelho e sobem sozinhos quando a conexão volta (indicador no topo: Sincronizado / Enviando / Sem internet).
 
-Tema, tabela compacta e lembrete de backup são preferências de cada aparelho.
+### Visualizar com dados fictícios
+
+Abra `http://localhost:5173/?demo=1#/painel` com o servidor local em execução (`python -m http.server 5173`). A demonstração entra sem login e apresenta 20 materiais, 6 categorias, 7 funcionários, 20 apartamentos em 5 andares e áreas comuns, com histórico e saldos relacionados. Eletricistas retiram materiais elétricos; encanadores, itens hidráulicos; e assim por diante. Inclui estoques regulares, baixos e zerados.
+
+O indicador **Demonstração** identifica esse modo. Os dados fictícios ficam na **Obra teste**. É possível criar e editar outras obras locais para experimentar o seletor. Dados e preferências desse modo ficam no armazenamento do navegador, separados do acesso normal; recarregar preserva as alterações. Não há leitura ou gravação no banco Firebase. Remova `?demo=1` e o parâmetro `obra` da URL para voltar ao acesso normal. Para verificar consistência dos dados e isolamento: `node tests/demo.test.cjs`.
+
+### Acesso normal
+
+O site é publicado no **Firebase Hosting** do projeto `almoxarife-online` e os dados ficam no **Firestore** do mesmo projeto. Cada pessoa entra com e-mail e senha pessoal e deve confirmar o e-mail antes de acessar dados. No primeiro acesso, use **Criar minha conta**; para uma conta existente, use **Esqueci minha senha** quando necessário. O login compartilhado por ID deixou de conceder acesso.
+
+Os administradores configurados em `config/permissoes.adminEmails` acessam todas as obras. São administradores `jcmascena55@gmail.com` e `vitordonadellirodrigues@gmail.com`. A conta de serviço do Firebase é uma identidade de infraestrutura, não um usuário de login no site. O documento de administradores só pode ser alterado pelo proprietário do projeto usando acesso administrativo ao Firebase, nunca por clientes web.
+
+Em **Empresas**, o administrador geral cadastra empresas e define o e-mail do responsável de cada uma. O responsável cria e gerencia obras e libera colaboradores somente nas próprias empresas, em **Obras → Acessos**. Só o administrador geral cria empresas ou troca seus responsáveis. O responsável pode atualizar o nome da própria empresa. Uma pessoa pode ser responsável por mais de uma empresa.
+
+Colaboradores criam suas contas com e-mail confirmado e veem somente as obras em que foram liberados. Não acessam os menus de gestão e não alteram permissões. A liberação não envia convite automaticamente. As regras do Firestore protegem empresas, obras, catálogos e os registros antigos da obra principal.
+
+Tema, tabela compacta e lembrete de backup são preferências de cada obra neste aparelho.
+
+### Obras
+
+O seletor ao lado do status de sincronização escolhe a obra de todas as abas. A troca recarrega o contexto para limpar filtros, rascunhos e seleções da obra anterior; fica bloqueada enquanto há sincronização ou restauração em andamento. A obra selecionada é identificada no parâmetro `obra` da URL.
+
+Em **Obras**, administradores gerais gerenciam todas as obras; responsáveis gerenciam as obras das próprias empresas. Toda nova obra exige uma empresa, e essa vinculação não é alterada pelo formulário de edição. O botão **Criar Obra teste com dados fictícios** é exclusivo do administrador geral e pede uma empresa de destino. Não há exclusão de empresas ou obras nesta versão. Colaboradores alternam apenas entre obras liberadas no seletor do topo.
+
+A hierarquia é **Admin geral → Empresa → Obras**. Empresas ficam em `empresas/{id}`, com `nome` e `responsavelEmail`; obras em `obras/{id}`, com `empresaId` e `usuarios`. Os registros anteriores são vinculados à **Empresa inicial**, com responsável a definir pelo administrador geral. Os dados operacionais não são movidos: a Obra principal conserva os caminhos originais e as demais usam subcoleções próprias. Backup, importação, lançamentos e relatórios continuam restritos à obra selecionada. Código e regras devem ser publicados juntos, após preparar os metadados.
+
+Testes locais de autenticação, sem enviar e-mails: `node tests/auth.test.cjs`. Os testes do emulador também verificam acesso de membro, e-mail não confirmado, revogação, tentativa de autopromoção e o bloqueio do login compartilhado antigo.
+
+### Testes de isolamento no emulador
+
+O teste `tests/firestore-obras.test.cjs` verifica o adaptador real, as regras, a criação de exemplos e a preservação dos dados legados usando apenas o projeto fictício `demo-almoxarife-obras`. Requer Java e os pacotes de teste. Exemplo em PowerShell, sem instalar dependências no site:
+
+```powershell
+$testDeps = Join-Path $env:TEMP 'almoxarife-obras-tests'
+npm install --prefix $testDeps --no-audit --no-fund @firebase/rules-unit-testing firebase
+$env:NODE_PATH = Join-Path $testDeps 'node_modules'
+npx --yes firebase-tools emulators:exec --config .firebase-emulator.json --project demo-almoxarife-obras --only firestore 'node tests/firestore-obras.test.cjs'
+```
 
 ## Publicar
 Na pasta do projeto, com o Firebase CLI logado:
