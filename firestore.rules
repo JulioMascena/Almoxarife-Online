@@ -1,48 +1,83 @@
 rules_version = '2';
-
-// Regras de segurança do Almoxarife.
-// Um único login (ID + senha) é compartilhado pela equipe. Só ele lê e grava os dados da obra.
-// Tudo o que não está liberado aqui é negado.
 service cloud.firestore {
   match /databases/{database}/documents {
+    function verified() {
+      return request.auth != null && request.auth.token.get('email_verified', false) == true
+        && request.auth.token.get('email', '') is string;
+    }
+    function email() { return request.auth.token.email.lower(); }
+    function admin() {
+      return verified() && email() in get(/databases/$(database)/documents/config/permissoes).data.adminEmails;
+    }
+    function member(obraId) {
+      return verified() && exists(/databases/$(database)/documents/obras/$(obraId))
+        && email() in get(/databases/$(database)/documents/obras/$(obraId)).data.usuarios;
+    }
+    function companyManager(empresaId) {
+      return verified() && empresaId is string
+        && exists(/databases/$(database)/documents/empresas/$(empresaId))
+        && get(/databases/$(database)/documents/empresas/$(empresaId)).data.responsavelEmail == email();
+    }
+    function manageWork(obraId) {
+      return admin() || companyManager(get(/databases/$(database)/documents/obras/$(obraId)).data.empresaId);
+    }
+    function manageWorkAfter(obraId) {
+      return admin() || companyManager(getAfter(/databases/$(database)/documents/obras/$(obraId)).data.empresaId);
+    }
+    function access(obraId) { return manageWork(obraId) || member(obraId); }
+    function dataCollection(col) {
+      return col in ['categorias', 'produtos', 'locais', 'funcionarios', 'movimentos'];
+    }
+    function validWork() {
+      return request.resource.data.keys().hasOnly(['nome', 'endereco', 'responsavel', 'teste', 'criadoEm', 'usuarios', 'empresaId'])
+        && request.resource.data.nome is string && request.resource.data.nome.size() > 0 && request.resource.data.nome.size() <= 100
+        && request.resource.data.endereco is string && request.resource.data.endereco.size() <= 250
+        && request.resource.data.responsavel is string && request.resource.data.responsavel.size() <= 100
+        && request.resource.data.teste is bool && request.resource.data.criadoEm is number
+        && request.resource.data.usuarios is list && request.resource.data.usuarios.size() <= 100
+        && request.resource.data.empresaId is string
+        && exists(/databases/$(database)/documents/empresas/$(request.resource.data.empresaId));
+    }
+    function configWrite(obraId) {
+      return manageWorkAfter(obraId) || (member(obraId) && request.resource.data.obraNome == resource.data.obraNome
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estoqueMinimoPadrao']));
+    }
 
-    function logado() {
-      return request.auth != null;
+    // Admin configuration is provisioned by the project owner, never by clients.
+    match /config/permissoes { allow get: if verified(); }
+    match /empresas/{empresaId} {
+      function validCompany() {
+        return request.resource.data.keys().hasOnly(['nome', 'responsavelEmail', 'criadoEm'])
+          && request.resource.data.nome is string && request.resource.data.nome.size() > 0 && request.resource.data.nome.size() <= 100
+          && request.resource.data.responsavelEmail is string && request.resource.data.responsavelEmail.size() <= 254
+          && request.resource.data.criadoEm is number;
+      }
+      allow read: if admin() || (verified() && resource.data.responsavelEmail == email());
+      allow create: if admin() && validCompany();
+      allow update: if validCompany() &&
+        ((admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'responsavelEmail']))
+          || (companyManager(empresaId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome'])));
     }
-    function caminhoAcesso() {
-      return /databases/$(database)/documents/config/acesso;
-    }
-    // Verdadeiro só para o login único da obra.
-    function acesso() {
-      return logado() && exists(caminhoAcesso())
-        && get(caminhoAcesso()).data.uid == request.auth.uid;
-    }
-
-    // ---------- Login único ----------
-    // Criado uma única vez. A leitura é pública para o app saber se o login já existe (não guarda senha).
-    match /config/acesso {
-      allow get: if true;
-      allow create: if logado() && !exists(caminhoAcesso())
-        && request.resource.data.uid == request.auth.uid;
-    }
-
-    // ID -> conta interna. Leitura de um ID por vez (necessária para entrar); não é possível listar.
-    match /logins/{id} {
-      allow get: if true;
-      allow create: if logado() && !exists(caminhoAcesso())
-        && existsAfter(caminhoAcesso())
-        && getAfter(caminhoAcesso()).data.uid == request.auth.uid
-        && getAfter(caminhoAcesso()).data.usuario == id;
-    }
-
-    // ---------- Dados da obra ----------
     match /config/geral {
-      allow read, write: if acesso();
+      allow read: if access('principal');
+      allow write: if configWrite('principal');
     }
-
-    match /{colecao}/{docId} {
-      allow read, write: if acesso()
-        && colecao in ['categorias', 'produtos', 'locais', 'funcionarios', 'movimentos'];
+    match /obras/{obraId} {
+      allow read: if admin() || companyManager(resource.data.empresaId) || (verified() && email() in resource.data.usuarios);
+      allow create: if validWork() && (admin() || companyManager(request.resource.data.empresaId));
+      allow update: if manageWork(obraId) && validWork()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nome', 'endereco', 'responsavel', 'usuarios']);
+      match /{col}/{docId} {
+        allow read: if access(obraId) && (dataCollection(col) || (col == 'config' && docId == 'geral'));
+        allow write: if existsAfter(/databases/$(database)/documents/obras/$(obraId))
+          && ((dataCollection(col) && (manageWorkAfter(obraId) || member(obraId)))
+            || (col == 'config' && docId == 'geral' && configWrite(obraId)));
+      }
     }
+    // Original records retain their paths but inherit principal-work permissions.
+    match /{col}/{docId} {
+      allow read, write: if dataCollection(col) && access('principal');
+    }
+    // Legacy shared-login documents and all other paths are denied.
   }
 }

@@ -9,7 +9,7 @@
         <div class="card">
           <h3 class="card__title">Obra</h3>
           <p class="desc">Nome exibido no menu e no topo dos relatórios impressos.</p>
-          <div class="field"><label for="s-obra">Nome da obra</label><input class="input" id="s-obra" value="${esc(s.obraNome)}" data-obra placeholder="Ex.: Residencial Jardins"></div>
+          <div class="field"><label for="s-obra">Nome da obra</label><input class="input" id="s-obra" maxlength="100" value="${esc(s.obraNome)}" data-obra ${Nuvem.podeGerenciarObra(App.obras.find((o) => o.id === Nuvem.obraAtual)) ? '' : 'readonly'} placeholder="Ex.: Residencial Jardins"></div>
         </div>
 
         <div class="card">
@@ -61,7 +61,7 @@
 
         <div class="card danger-card">
           <h3 class="card__title">Apagar Todos os Dados</h3>
-          <p class="desc">Apaga produtos, categorias, locais, funcionários e todo o histórico <b>da obra inteira, para todos os aparelhos</b>. Baixe um backup antes.</p>
+          <p class="desc">Apaga produtos, categorias, locais, funcionários e histórico somente de <b>${esc(s.obraNome)}</b>, para todos os aparelhos. As outras obras são preservadas. Baixe um backup antes.</p>
           <div class="btn-row">
             <button class="btn btn-danger" data-zerar>Apagar tudo e começar do zero</button>
           </div>
@@ -89,8 +89,9 @@
       try {
         const dados = JSON.parse(await file.text());
         if (!dados || !Array.isArray(dados.produtos)) throw new Error();
-        const ok = await confirm({ title: 'Restaurar backup?', message: `O arquivo tem ${dados.produtos.length} produtos e ${(dados.locais || []).length} locais. <b>Os dados atuais da obra serão substituídos em todos os aparelhos.</b>`, confirmText: 'Restaurar', danger: true });
+        const ok = await confirm({ title: 'Restaurar backup?', message: `O arquivo tem ${dados.produtos.length} produtos e ${(dados.locais || []).length} locais. <b>Os dados de ${esc(Store.state.settings.obraNome)} serão substituídos em todos os aparelhos.</b> As outras obras serão preservadas.`, confirmText: 'Restaurar', danger: true });
         if (ok) {
+          dados.settings = { ...(dados.settings || {}), obraNome: Store.state.settings.obraNome };
           toast('Restaurando backup…');
           Store.substituirTudo(dados).then(() => toast('Backup restaurado para todos os aparelhos.')).catch(() => {});
         }
@@ -106,7 +107,7 @@
     });
 
     $('[data-zerar]').addEventListener('click', async () => {
-      const ok = await confirm({ title: 'Apagar tudo da obra?', message: 'Todos os produtos, categorias, locais, funcionários e o histórico serão apagados <b>para todos os aparelhos</b>. Isso não pode ser desfeito.', confirmText: 'Continuar', danger: true });
+      const ok = await confirm({ title: 'Apagar tudo da obra?', message: `Todos os dados de <b>${esc(Store.state.settings.obraNome)}</b> serão apagados para todos os aparelhos. As outras obras serão preservadas. Isso não pode ser desfeito.`, confirmText: 'Continuar', danger: true });
       if (!ok) return;
       const digitado = window.prompt('Para confirmar, digite APAGAR');
       if ((digitado || '').trim().toUpperCase() !== 'APAGAR') { toast('Nada foi apagado.'); return; }
