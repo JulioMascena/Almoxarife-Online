@@ -6,7 +6,7 @@
     const resumo = Store.produtosPorCategoria();
     const mes = Store.hoje().slice(0, 7);
     root.innerHTML = `
-      <div class="toolbar"><span class="muted" style="font-size:14px">${s.categorias.length} categoria(s)</span><span class="spacer"></span><button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Categoria</button></div>
+      <div class="page-header"><span class="page-header__summary">${s.categorias.length} categoria(s)</span><button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Categoria</button></div>
       ${s.categorias.length ? `<div class="grid grid-3">${s.categorias.map((c) => {
         const r = resumo.find((x) => x.id === c.id) || { valor: 0, baixos: 0 };
         const baixos = r.baixos;

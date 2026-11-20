@@ -193,5 +193,5 @@
   }
 
   window.Pages = window.Pages || {};
-  window.UI = { icon, esc, num, data, hora, MESES, openModal, confirm, toast, bars, vchart, empty, badgeEstoque, catBadge, movItem, download };
+  window.UI = { icon, esc, num, data, hora, MESES, openModal, closeModals: () => [...modalStack].reverse().forEach((m) => m.close()), confirm, toast, bars, vchart, empty, badgeEstoque, catBadge, movItem, download };
 })();

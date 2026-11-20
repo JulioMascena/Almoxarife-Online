@@ -60,22 +60,22 @@
     const concluidos = s.locais.filter((l) => l.status === 'concluido').length;
 
     root.innerHTML = `
+      <div class="page-header"><span class="page-header__summary">${s.locais.length} ${s.locais.length === 1 ? 'local' : 'locais'}</span><button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Local</button></div>
+      <div class="toolbar filter-toolbar">
+        <label class="search">${icon('search')}<input class="input" type="search" placeholder="Buscar locais... (ex.: 1901, hall)" value="${esc(filtros.busca)}" data-busca aria-label="Buscar locais"></label>
+        <label class="field toolbar-filter"><span>Status</span><select class="select select-inline" data-status aria-label="Filtrar por status">
+          <option value="">Qualquer status</option>
+          ${Store.STATUS_LOCAL.map((st) => `<option value="${st.id}" ${filtros.status === st.id ? 'selected' : ''}>${esc(st.nome)}</option>`).join('')}
+        </select></label>
+        <span class="spacer"></span>
+        <button class="btn btn-outline" data-lote>${icon('layers', 'i-sm')}Gerar apartamentos</button>
+      </div>
+
       <div class="grid grid-4">
         <div class="card"><p class="stat__label">Locais cadastrados</p><div class="stat__value">${s.locais.length}</div><div class="stat__hint">${contagem.apartamento || 0} apartamentos</div></div>
         <div class="card"><p class="stat__label">Em andamento</p><div class="stat__value">${andamento}</div><div class="stat__hint">${concluidos} concluídos</div></div>
         <div class="card"><p class="stat__label">Saídas para locais</p><div class="stat__value">${num([...consumo.values()].reduce((a, v) => a + v.saidas, 0), 0)}</div><div class="stat__hint">retiradas registradas</div></div>
         <div class="card"><p class="stat__label">Locais que já receberam</p><div class="stat__value">${consumo.size}</div><div class="stat__hint">de ${s.locais.length} cadastrados</div></div>
-      </div>
-
-      <div class="toolbar">
-        <label class="search">${icon('search')}<input class="input" type="search" placeholder="Buscar locais... (ex.: 1901, hall)" value="${esc(filtros.busca)}" data-busca aria-label="Buscar locais"></label>
-        <select class="select select-inline" data-status aria-label="Filtrar por status">
-          <option value="">Qualquer status</option>
-          ${Store.STATUS_LOCAL.map((st) => `<option value="${st.id}" ${filtros.status === st.id ? 'selected' : ''}>${esc(st.nome)}</option>`).join('')}
-        </select>
-        <span class="spacer"></span>
-        <button class="btn btn-outline" data-lote>${icon('layers', 'i-sm')}Gerar apartamentos</button>
-        <button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Local</button>
       </div>
 
       <div class="chips" role="group" aria-label="Filtrar por tipo">

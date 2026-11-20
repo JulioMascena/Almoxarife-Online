@@ -36,13 +36,13 @@
 
     root.innerHTML = `
       <div class="print-only"><h1 style="font-size:22px">Relatório do almoxarifado · ${esc(s.settings.obraNome)}</h1><p class="muted">${esc(periodoTxt)} · gerado em ${data(Store.hoje())}</p></div>
-      <div class="toolbar no-print">
-        <div class="field" style="flex-direction:row;align-items:center;gap:8px"><label for="r-de" class="muted" style="font-weight:400">De:</label><input class="input" id="r-de" type="date" value="${esc(de)}" data-de style="width:auto"></div>
-        <div class="field" style="flex-direction:row;align-items:center;gap:8px"><label for="r-ate" class="muted" style="font-weight:400">Até:</label><input class="input" id="r-ate" type="date" value="${esc(ate)}" data-ate style="width:auto"></div>
+      <div class="page-header no-print"><span class="page-header__summary">${esc(periodoTxt)}</span><button class="btn btn-primary" data-print>${icon('printer', 'i-sm')}Imprimir Relatório</button></div>
+      <div class="toolbar filter-toolbar no-print">
+        <div class="field toolbar-filter"><label for="r-de" class="muted" style="font-weight:400">De:</label><input class="input" id="r-de" type="date" value="${esc(de)}" data-de></div>
+        <div class="field toolbar-filter"><label for="r-ate" class="muted" style="font-weight:400">Até:</label><input class="input" id="r-ate" type="date" value="${esc(ate)}" data-ate></div>
         ${de || ate ? '<button class="btn btn-ghost btn-sm" data-limpar>Limpar período</button>' : ''}
         <span class="spacer"></span>
         <a class="btn btn-outline" href="#/historico">${icon('clock', 'i-sm')}Ver histórico completo</a>
-        <button class="btn btn-primary" data-print>${icon('printer', 'i-sm')}Imprimir Relatório</button>
       </div>
 
       <div class="grid grid-4">
