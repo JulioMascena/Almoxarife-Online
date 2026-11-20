@@ -1,14 +1,8 @@
-/* Sincronização com o Firebase (Firestore + Authentication).
-   Todos os aparelhos leem e gravam no mesmo banco, e cada tela recebe as mudanças na hora.
-
-   Estrutura no Firestore:
-     config/geral          nome da obra e estoque mínimo padrão
-     categorias/{id}       produtos/{id}       locais/{id}       funcionarios/{id}
-     movimentos/{AAAA-MM}  { itens: [ ...movimentações daquele mês ] }
-   O estoque de cada produto (produtos/{id}.quantidade) muda com "increment",
-   então dois lançamentos ao mesmo tempo nunca se perdem.
-
-   Login: o mesmo acesso único do sistema anterior (ID + senha). */
+/* Firebase: contas pessoais verificadas e hierarquia Admin -> Empresa -> Obras.
+   Empresas: empresas/{id}, com responsavelEmail.
+   Obras: obras/{id}, com empresaId e usuarios.
+   A obra principal preserva os caminhos de dados legados; as demais usam subcolecoes.
+   Estoque continua usando increment e historico mensal para concorrencia. */
 (function () {
   // Configuração pública do app web (não é segredo). No Firebase Hosting ela vem de /__/firebase/init.json.
   const CONFIG_PADRAO = {
@@ -19,15 +13,18 @@
     messagingSenderId: '97339965087',
     appId: '1:97339965087:web:0f2ca8ca6558ef510eecaa',
   };
-  const DOMINIO_INTERNO = 'usuarios.almoxarife-online.web.app';
-  const COMPLEMENTO_SENHA = '@AlmoxOnline';
-  const SENHA_MINIMA = 4;
+  let perfil = null;
   const COLECOES = ['categorias', 'produtos', 'locais', 'funcionarios'];
+  const obraAtual = new URLSearchParams(location.search).get('obra') || 'principal';
+  const baseDados = (id = obraAtual) => id === 'principal' ? db : db.collection('obras').doc(id);
+  const desligarCatalogo = [];
+  const desligarEmpresas = [];
+  let catalogoObras = [];
 
   let auth, db, FV;
   let pronto = null;
   const desligar = [];
-  const status = { online: navigator.onLine, pendentes: false, ultimoErro: '' };
+  const status = { online: navigator.onLine, pendentes: false, ocupado: false, ultimoErro: '' };
   const ouvintesStatus = [];
 
   const avisarStatus = () => ouvintesStatus.forEach((fn) => fn(status));
@@ -52,66 +49,173 @@
   }
 
   /* ---------- Login ---------- */
-  const normalizarId = (t) => String(t || '').trim().toLowerCase();
-  const senhaInterna = (s) => String(s) + COMPLEMENTO_SENHA;
-  const refAcesso = () => db.collection('config').doc('acesso');
+  const normalizarEmail = (email) => String(email || '').trim().toLowerCase();
+  const validarEmail = (valor) => {
+    const email = normalizarEmail(valor);
+    if (email.length > 254 || !/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(email)) throw new Error('Informe um e-mail válido.');
+    return email;
+  };
+  const exigirAdmin = () => { if (!perfil?.admin) throw new Error('Somente administradores gerais podem executar esta ação.'); };
+  const podeGerenciarEmpresa = (id) => !!perfil && (perfil.admin || perfil.empresaIds.includes(id));
+  const podeGerenciarObra = (obra) => !!perfil && (perfil.admin || (!!obra && podeGerenciarEmpresa(obra.empresaId)));
+  const exigirGestao = (id) => { if (!podeGerenciarEmpresa(id)) throw new Error('Você não pode gerenciar obras desta empresa.'); };
+  const exigirGerente = () => { if (!perfil?.admin && !perfil?.empresaIds?.length) throw new Error('Você não pode gerenciar obras e acessos.'); };
 
   function erroAmigavel(e) {
     const c = (e && e.code) || '';
-    if (c.includes('wrong-password') || c.includes('invalid-credential') || c.includes('user-not-found') || c.includes('invalid-login')) return 'ID ou senha incorretos.';
+    if (c.includes('wrong-password') || c.includes('invalid-credential') || c.includes('user-not-found') || c.includes('invalid-login')) return 'E-mail ou senha incorretos.';
+    if (c.includes('email-already-in-use')) return 'Este e-mail já tem uma conta. Entre ou use Esqueci minha senha.';
+    if (c.includes('weak-password')) return 'Escolha uma senha com pelo menos 8 caracteres.';
+    if (c.includes('invalid-email')) return 'Informe um e-mail válido.';
     if (c.includes('too-many-requests')) return 'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
     if (c.includes('network')) return 'Sem conexão com a internet.';
     if (c.includes('permission-denied')) return 'Sem permissão para acessar os dados.';
     return (e && e.message) || 'Erro inesperado.';
   }
 
-  async function acessoExiste() {
-    return (await refAcesso().get()).exists;
+  async function entrar(email, senha) {
+    try { await auth.signInWithEmailAndPassword(validarEmail(email), senha); }
+    catch (e) { throw new Error(erroAmigavel(e)); }
   }
 
-  async function entrar(idDigitado, senha) {
-    const id = normalizarId(idDigitado);
-    if (!id || !senha) throw new Error('Informe o ID e a senha.');
-    const login = await db.collection('logins').doc(id).get();
-    if (!login.exists) throw new Error('ID ou senha incorretos.');
+  async function criarAcesso(email, senha) {
+    if (String(senha || '').length < 8) throw new Error('Escolha uma senha com pelo menos 8 caracteres.');
     try {
-      await auth.signInWithEmailAndPassword(login.data().email, senhaInterna(senha));
+      const cred = await auth.createUserWithEmailAndPassword(validarEmail(email), senha);
+      await cred.user.sendEmailVerification();
     } catch (e) { throw new Error(erroAmigavel(e)); }
   }
 
-  /* Cria o acesso único (só funciona enquanto ainda não existe nenhum) */
-  async function criarAcesso(idDigitado, senha) {
-    const rotulo = String(idDigitado || '').trim();
-    const id = normalizarId(rotulo);
-    if (!/^[a-z0-9]+([._-][a-z0-9]+)*$/.test(id) || id.length < 3 || id.length > 30) throw new Error('ID inválido. Use de 3 a 30 letras ou números, sem espaços.');
-    if (String(senha || '').length < SENHA_MINIMA) throw new Error(`A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.`);
-    const sufixo = crypto.getRandomValues(new Uint32Array(1))[0].toString(36);
-    const email = `${id}.${sufixo}@${DOMINIO_INTERNO}`;
-    try {
-      const cred = await auth.createUserWithEmailAndPassword(email, senhaInterna(senha));
-      const lote = db.batch();
-      lote.set(refAcesso(), { uid: cred.user.uid, usuario: id, rotulo, criadoEm: FV.serverTimestamp() });
-      lote.set(db.collection('logins').doc(id), { email });
-      await lote.commit();
-    } catch (e) {
-      if (auth.currentUser) await auth.signOut().catch(() => {});
-      throw new Error(erroAmigavel(e));
-    }
+  async function reenviarVerificacao() {
+    try { await auth.currentUser.sendEmailVerification(); }
+    catch (e) { throw new Error(erroAmigavel(e)); }
   }
 
-  /* Só o acesso único entra; qualquer outra conta é recusada */
+  async function redefinirSenha(email) {
+    try { await auth.sendPasswordResetEmail(validarEmail(email)); }
+    catch (e) { if (e.code !== 'auth/user-not-found') throw new Error(erroAmigavel(e)); }
+  }
+
   async function conferirAcesso(user) {
-    const snap = await refAcesso().get();
-    if (!snap.exists || snap.data().uid !== user.uid) return null;
-    return { rotulo: snap.data().rotulo || snap.data().usuario };
+    perfil = null;
+    if (normalizarEmail(user.email).endsWith('@usuarios.almoxarife-online.web.app')) return { loginAntigo: true };
+    await user.reload();
+    if (!user.emailVerified) return { verificarEmail: true, email: user.email };
+    await user.getIdToken(true);
+    const email = validarEmail(user.email);
+    const snap = await db.collection('config').doc('permissoes').get({ source: 'server' });
+    if (!snap.exists) throw new Error('A configuração de administradores ainda não foi publicada.');
+    const adminEmails = snap.data().adminEmails || [];
+    const admin = adminEmails.includes(email);
+    const empresas = admin ? null : await db.collection('empresas').where('responsavelEmail', '==', email).get({ source: 'server' });
+    perfil = { email, rotulo: email, admin, adminEmails, empresaIds: empresas ? empresas.docs.map((d) => d.id).sort() : [] };
+    return perfil;
   }
 
   function aoMudarLogin(fn) { return auth.onAuthStateChanged(fn); }
-  async function sair() { pararDeOuvir(); await auth.signOut(); }
+  async function sair() { perfil = null; pararDeOuvir(); pararObras(); pararEmpresas(); await auth.signOut(); }
+
+  function pararEmpresas() { while (desligarEmpresas.length) desligarEmpresas.pop()(); }
+  function ouvirEmpresas(fn, erro) {
+    pararEmpresas();
+    const consulta = perfil.admin ? db.collection('empresas') : db.collection('empresas').where('responsavelEmail', '==', perfil.email);
+    desligarEmpresas.push(consulta.onSnapshot((snap) => {
+      const lista = snap.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      const ids = perfil.admin ? [] : lista.map((e) => e.id).sort();
+      const mudouEscopo = !perfil.admin && JSON.stringify(ids) !== JSON.stringify(perfil.empresaIds);
+      perfil.empresaIds = ids;
+      fn(lista, mudouEscopo);
+    }, erro));
+  }
+
+  async function criarEmpresa(dados) {
+    exigirAdmin();
+    const nome = String(dados.nome || '').trim();
+    if (!nome || nome.length > 100) throw new Error('Informe o nome da empresa com até 100 caracteres.');
+    const id = Store.uid();
+    await db.collection('empresas').doc(id).set({ nome, responsavelEmail: validarEmail(dados.responsavelEmail), criadoEm: Date.now() });
+    return id;
+  }
+
+  async function salvarEmpresa(id, dados) {
+    exigirGestao(id);
+    const nome = String(dados.nome || '').trim();
+    if (!nome || nome.length > 100) throw new Error('Informe o nome da empresa com até 100 caracteres.');
+    const novos = { nome };
+    if (perfil.admin) novos.responsavelEmail = validarEmail(dados.responsavelEmail);
+    await db.collection('empresas').doc(id).update(novos);
+  }
+
+  function pararObras() { while (desligarCatalogo.length) desligarCatalogo.pop()(); }
+  function ouvirObras(fn, erro) {
+    pararObras();
+    const consultas = perfil.admin ? [db.collection('obras')] : [
+      db.collection('obras').where('usuarios', 'array-contains', perfil.email),
+      ...perfil.empresaIds.map((id) => db.collection('obras').where('empresaId', '==', id)),
+    ];
+    const resultados = new Map();
+    consultas.forEach((consulta, i) => desligarCatalogo.push(consulta.onSnapshot((snap) => {
+      resultados.set(i, snap.docs.map((d) => ({ ...d.data(), id: d.id })));
+      if (resultados.size !== consultas.length) return;
+      const unicos = new Map();
+      resultados.forEach((docs) => docs.forEach((obra) => unicos.set(obra.id, obra)));
+      catalogoObras = [...unicos.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      fn(catalogoObras);
+    }, erro)));
+  }
+
+  async function criarObra(dados, teste = false) {
+    if (teste) exigirAdmin();
+    exigirGestao(dados.empresaId);
+    if (!dados.empresaId) throw new Error('Selecione uma empresa.');
+    const nome = String(dados.nome || '').trim();
+    if (!nome || nome.length > 100) throw new Error('Informe um nome com até 100 caracteres.');
+    const id = teste ? 'teste' : Store.uid();
+    const ref = db.collection('obras').doc(id);
+    const meta = { nome, endereco: String(dados.endereco || '').trim(), responsavel: String(dados.responsavel || '').trim(), empresaId: dados.empresaId, teste, criadoEm: Date.now(), usuarios: [] };
+    const lote = db.batch();
+    lote.set(ref, meta);
+    const exemplo = teste ? Store.gerarExemplo() : null;
+    if (exemplo) {
+      COLECOES.forEach((col) => exemplo[col].forEach(({ id: docId, ...valor }) => lote.set(ref.collection(col).doc(docId), valor)));
+      const meses = new Map();
+      exemplo.movimentos.forEach((m) => { const mes = mesDe(m); if (!meses.has(mes)) meses.set(mes, []); meses.get(mes).push(m); });
+      meses.forEach((itens, mes) => lote.set(ref.collection('movimentos').doc(mes), { itens }));
+    }
+    lote.set(ref.collection('config').doc('geral'), { obraNome: nome, estoqueMinimoPadrao: 5 });
+    await lote.commit();
+    return id;
+  }
+
+  async function salvarObra(id, dados) {
+    exigirGerente();
+    const atual = await db.collection('obras').doc(id).get({ source: 'server' });
+    if (!atual.exists) throw new Error('Obra não encontrada.');
+    exigirGestao(atual.data().empresaId);
+    if (dados.empresaId && dados.empresaId !== atual.data().empresaId) throw new Error('A empresa da obra não pode ser alterada nesta tela.');
+    const nome = String(dados.nome || '').trim();
+    if (!nome || nome.length > 100) throw new Error('Informe um nome com até 100 caracteres.');
+    const lote = db.batch();
+    lote.update(db.collection('obras').doc(id), { nome, endereco: String(dados.endereco || '').trim(), responsavel: String(dados.responsavel || '').trim() });
+    lote.set(baseDados(id).collection('config').doc('geral'), { obraNome: nome }, { merge: true });
+    await lote.commit();
+  }
+
+  async function alterarAcesso(id, email, permitir) {
+    exigirGerente();
+    const obra = await db.collection('obras').doc(id).get({ source: 'server' });
+    if (!obra.exists) throw new Error('Obra não encontrada.');
+    exigirGestao(obra.data().empresaId);
+    const valor = validarEmail(email);
+    const ref = db.collection('obras').doc(id);
+    await ref.update({ usuarios: permitir ? FV.arrayUnion(valor) : FV.arrayRemove(valor) });
+    return (await ref.get({ source: 'server' })).data().usuarios;
+  }
 
   /* ---------- Leitura em tempo real ---------- */
   function ouvir(aoReceber) {
     pararDeOuvir();
+    const base = baseDados();
     const recebidos = new Set();
     const esperando = COLECOES.length + 2;
     const pendentesPor = {};
@@ -127,21 +231,21 @@
       }
       if (!avisouPronto && recebidos.size >= esperando) { avisouPronto = true; aoReceber('pronto'); }
     };
-    const erro = (e) => { status.ultimoErro = erroAmigavel(e); avisarStatus(); };
+    const erro = (e) => { status.ultimoErro = erroAmigavel(e); avisarStatus(); aoReceber('erro', status.ultimoErro); };
 
     COLECOES.forEach((col) => {
-      desligar.push(db.collection(col).onSnapshot({ includeMetadataChanges: true }, (snap) => {
+      desligar.push(base.collection(col).onSnapshot({ includeMetadataChanges: true }, (snap) => {
         aoReceber(col, snap.docs.map((d) => Object.assign({}, d.data(), { id: d.id })));
         marcar(col, snap);
       }, erro));
     });
-    desligar.push(db.collection('movimentos').onSnapshot({ includeMetadataChanges: true }, (snap) => {
+    desligar.push(base.collection('movimentos').onSnapshot({ includeMetadataChanges: true }, (snap) => {
       const todos = [];
       snap.docs.forEach((d) => (d.data().itens || []).forEach((m) => todos.push(m)));
       aoReceber('movimentos', todos);
       marcar('movimentos', snap);
     }, erro));
-    desligar.push(db.collection('config').doc('geral').onSnapshot({ includeMetadataChanges: true }, (snap) => {
+    desligar.push(base.collection('config').doc('geral').onSnapshot({ includeMetadataChanges: true }, (snap) => {
       aoReceber('config', snap.exists ? snap.data() : {});
       marcar('config', snap);
     }, erro));
@@ -155,20 +259,24 @@
   /* ops: lista de { t: 'set'|'update'|'inc'|'del'|'movAdd'|'movDel'|'config', ... } */
   function enviar(ops) {
     if (!ops.length || !db) return Promise.resolve();
+    const base = baseDados();
     const lotes = [];
     let lote = db.batch(), n = 0;
     const novoLote = () => { lotes.push(lote); lote = db.batch(); n = 0; };
     ops.forEach((op) => {
       if (n >= 450) novoLote();
-      const ref = op.col ? db.collection(op.col).doc(op.id) : null;
+      const ref = op.col ? base.collection(op.col).doc(op.id) : null;
       if (op.t === 'set') lote.set(ref, limpar(op.dados));
       else if (op.t === 'update') lote.set(ref, limpar(op.dados), { merge: true });
       else if (op.t === 'inc') lote.set(ref, { [op.campo]: FV.increment(op.valor) }, { merge: true });
       else if (op.t === 'del') lote.delete(ref);
-      else if (op.t === 'movAdd') lote.set(db.collection('movimentos').doc(mesDe(op.mov)), { itens: FV.arrayUnion(limpar(op.mov)) }, { merge: true });
-      else if (op.t === 'movDel') lote.set(db.collection('movimentos').doc(mesDe(op.mov)), { itens: FV.arrayRemove(limpar(op.mov)) }, { merge: true });
-      else if (op.t === 'config') lote.set(db.collection('config').doc('geral'), limpar(op.dados), { merge: true });
-      else if (op.t === 'movMes') lote.set(db.collection('movimentos').doc(op.id), { itens: op.itens.map(limpar) });
+      else if (op.t === 'movAdd') lote.set(base.collection('movimentos').doc(mesDe(op.mov)), { itens: FV.arrayUnion(limpar(op.mov)) }, { merge: true });
+      else if (op.t === 'movDel') lote.set(base.collection('movimentos').doc(mesDe(op.mov)), { itens: FV.arrayRemove(limpar(op.mov)) }, { merge: true });
+      else if (op.t === 'config') {
+        lote.set(base.collection('config').doc('geral'), limpar(op.dados), { merge: true });
+        if (podeGerenciarObra(catalogoObras.find((o) => o.id === obraAtual)) && op.dados.obraNome !== undefined) lote.update(db.collection('obras').doc(obraAtual), { nome: op.dados.obraNome });
+      }
+      else if (op.t === 'movMes') lote.set(base.collection('movimentos').doc(op.id), { itens: op.itens.map(limpar) });
       n++;
     });
     if (n) lotes.push(lote);
@@ -184,23 +292,33 @@
 
   /* Substitui tudo (restaurar backup / apagar tudo): apaga o que existe e grava o novo */
   async function substituirTudo(atual, novo) {
-    const ops = [];
-    COLECOES.forEach((col) => (atual[col] || []).forEach((x) => ops.push({ t: 'del', col, id: x.id })));
-    const mesesAntigos = new Set((atual.movimentos || []).map(mesDe));
-    const porMes = new Map();
-    (novo.movimentos || []).forEach((m) => { const k = mesDe(m); if (!porMes.has(k)) porMes.set(k, []); porMes.get(k).push(m); });
-    mesesAntigos.forEach((k) => { if (!porMes.has(k)) ops.push({ t: 'del', col: 'movimentos', id: k }); });
-    // Apaga primeiro, depois grava (lotes separados, na ordem)
-    await enviar(ops);
-    const novos = [];
-    COLECOES.forEach((col) => (novo[col] || []).forEach((x) => { const d = Object.assign({}, x); delete d.id; novos.push({ t: 'set', col, id: x.id, dados: d }); }));
-    porMes.forEach((itens, id) => novos.push({ t: 'movMes', id, itens }));
-    novos.push({ t: 'config', dados: { obraNome: novo.settings.obraNome, estoqueMinimoPadrao: novo.settings.estoqueMinimoPadrao } });
-    await enviar(novos);
+    status.ocupado = true;
+    avisarStatus();
+    try {
+      const ops = [];
+      COLECOES.forEach((col) => (atual[col] || []).forEach((x) => ops.push({ t: 'del', col, id: x.id })));
+      const mesesAntigos = new Set((atual.movimentos || []).map(mesDe));
+      const porMes = new Map();
+      (novo.movimentos || []).forEach((m) => { const k = mesDe(m); if (!porMes.has(k)) porMes.set(k, []); porMes.get(k).push(m); });
+      mesesAntigos.forEach((k) => { if (!porMes.has(k)) ops.push({ t: 'del', col: 'movimentos', id: k }); });
+      // Apaga primeiro, depois grava (lotes separados, na ordem)
+      await enviar(ops);
+      const novos = [];
+      COLECOES.forEach((col) => (novo[col] || []).forEach((x) => { const d = Object.assign({}, x); delete d.id; novos.push({ t: 'set', col, id: x.id, dados: d }); }));
+      porMes.forEach((itens, id) => novos.push({ t: 'movMes', id, itens }));
+      novos.push({ t: 'config', dados: { obraNome: novo.settings.obraNome, estoqueMinimoPadrao: novo.settings.estoqueMinimoPadrao } });
+      await enviar(novos);
+    } finally {
+      status.ocupado = false;
+      avisarStatus();
+    }
   }
 
   window.Nuvem = {
-    iniciar, entrar, criarAcesso, acessoExiste, conferirAcesso, aoMudarLogin, sair,
+    ouvirEmpresas, pararEmpresas, criarEmpresa, salvarEmpresa, podeGerenciarEmpresa, podeGerenciarObra,
+    obraAtual, ouvirObras, pararObras, criarObra, salvarObra, alterarAcesso,
+    get perfil() { return perfil; },
+    iniciar, entrar, criarAcesso, reenviarVerificacao, redefinirSenha, conferirAcesso, aoMudarLogin, sair,
     ouvir, pararDeOuvir, enviar, substituirTudo,
     status, aoMudarStatus: (fn) => ouvintesStatus.push(fn),
   };

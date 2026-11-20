@@ -1,0 +1,12 @@
+.idea/
+.firebase/
+.impeccable/
+.agents/
+.codex/
+AGENTS.md
+PRODUCT.md
+skills-lock.json
+node_modules/
+*-debug.log
+.DS_Store
+Thumbs.db

@@ -20,19 +20,19 @@
     const s = Store.state;
     const funcoes = [...new Set(s.funcionarios.map((f) => f.funcao).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     root.innerHTML = `
-      <div class="toolbar">
+      <div class="page-header"><span class="page-header__summary">${s.funcionarios.length} funcionário(s)</span><button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Funcionário</button></div>
+      <div class="toolbar filter-toolbar">
         <label class="search">${icon('search')}<input class="input" type="search" placeholder="Buscar funcionário ou função..." value="${esc(filtros.busca)}" data-busca aria-label="Buscar funcionários"></label>
-        <select class="select select-inline" data-funcao aria-label="Filtrar por função">
+        <label class="field toolbar-filter"><span>Função</span><select class="select select-inline" data-funcao aria-label="Filtrar por função">
           <option value="">Todas as funções</option>
           ${funcoes.map((fn) => `<option ${filtros.funcao === fn ? 'selected' : ''}>${esc(fn)}</option>`).join('')}
-        </select>
-        <select class="select select-inline" data-status aria-label="Filtrar por situação">
+        </select></label>
+        <label class="field toolbar-filter"><span>Situação</span><select class="select select-inline" data-status aria-label="Filtrar por situação">
           <option value="ativos" ${filtros.status === 'ativos' ? 'selected' : ''}>Ativos</option>
           <option value="inativos" ${filtros.status === 'inativos' ? 'selected' : ''}>Inativos</option>
           <option value="" ${filtros.status === '' ? 'selected' : ''}>Todos</option>
-        </select>
+        </select></label>
         <span class="spacer"></span>
-        <button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Funcionário</button>
       </div>
       <div class="card card--flush" data-lista></div>`;
 

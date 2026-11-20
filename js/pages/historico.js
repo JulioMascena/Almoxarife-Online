@@ -45,37 +45,37 @@
     const locais = [...s.locais].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
 
     root.innerHTML = `
-      <div class="toolbar">
+      <div class="page-header"><span class="page-header__summary">${lista.length} ${lista.length === 1 ? 'movimentação' : 'movimentações'}</span><button class="btn btn-outline" data-csv>${icon('download', 'i-sm')}Exportar CSV</button></div>
+      <div class="toolbar history-views">
         <div class="segmented" role="tablist" aria-label="Forma de exibir">
           <button data-visao="linha" class="${f.visao === 'linha' ? 'is-active' : ''}">${icon('clock', 'i-sm')}Linha do tempo</button>
           <button data-visao="produto" class="${f.visao === 'produto' ? 'is-active' : ''}">${icon('box', 'i-sm')}Resumo por produto</button>
         </div>
         <span class="spacer"></span>
         <button class="btn btn-outline" data-lote ${s.produtos.length ? '' : 'disabled'}>${icon('upload', 'i-sm')}Lançar em lote</button>
-        <button class="btn btn-outline" data-csv>${icon('download', 'i-sm')}Exportar CSV</button>
       </div>
 
-      <div class="toolbar">
+      <div class="toolbar filter-toolbar">
         <label class="search">${icon('search')}<input class="input" type="search" placeholder="Buscar produto, pessoa, observação..." value="${esc(f.busca)}" data-busca aria-label="Buscar no histórico"></label>
         ${f.visao === 'linha' ? `
-        <select class="select select-inline" data-f="tipo" aria-label="Tipo">
+        <label class="field toolbar-filter"><span>Tipo</span><select class="select select-inline" data-f="tipo" aria-label="Tipo">
           <option value="">Todos os tipos</option>
           ${Object.entries(Store.TIPOS_MOV).map(([id, t]) => `<option value="${id}" ${f.tipo === id ? 'selected' : ''}>${esc(t.nome)}</option>`).join('')}
-        </select>
-        <select class="select select-inline" data-f="produto" aria-label="Produto">
+        </select></label>
+        <label class="field toolbar-filter"><span>Produto</span><select class="select select-inline" data-f="produto" aria-label="Produto">
           <option value="">Todos os produtos</option>
           ${produtosDoHistorico().map(([id, nome]) => `<option value="${id}" ${f.produto === id ? 'selected' : ''}>${esc(nome)}${Store.produto(id) ? '' : ' (excluído)'}</option>`).join('')}
-        </select>
-        <select class="select select-inline" data-f="local" aria-label="Local">
+        </select></label>
+        <label class="field toolbar-filter"><span>Local</span><select class="select select-inline" data-f="local" aria-label="Local">
           <option value="">Todos os locais</option>
           ${locais.map((l) => `<option value="${l.id}" ${f.local === l.id ? 'selected' : ''}>${esc(l.nome)}</option>`).join('')}
-        </select>
-        <select class="select select-inline" data-f="funcionario" aria-label="Funcionário">
+        </select></label>
+        <label class="field toolbar-filter"><span>Funcionário</span><select class="select select-inline" data-f="funcionario" aria-label="Funcionário">
           <option value="">Todos os funcionários</option>
           ${funcs.map((x) => `<option value="${x.id}" ${f.funcionario === x.id ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}
-        </select>` : ''}
-        <input class="input" type="date" value="${esc(f.de)}" data-f="de" aria-label="De" title="De" style="width:auto">
-        <input class="input" type="date" value="${esc(f.ate)}" data-f="ate" aria-label="Até" title="Até" style="width:auto">
+        </select></label>` : ''}
+        <label class="field toolbar-filter"><span>De</span><input class="input" type="date" value="${esc(f.de)}" data-f="de" aria-label="De" title="De"></label>
+        <label class="field toolbar-filter"><span>Até</span><input class="input" type="date" value="${esc(f.ate)}" data-f="ate" aria-label="Até" title="Até"></label>
         ${temFiltro ? '<button class="btn btn-ghost btn-sm" data-limpar>Limpar filtros</button>' : ''}
       </div>
 

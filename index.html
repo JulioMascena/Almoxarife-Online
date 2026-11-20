@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Almoxarife</title>
+  <title>PLUMB</title>
   <meta name="description" content="Controle de estoque do almoxarifado da obra: produtos, categorias, locais da obra e relatórios.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=17">
+  <link rel="icon" type="image/png" href="imgs/plumb_icone_transparente.png">
+  <link rel="preload" href="fonts/oxanium/Oxanium-Variable.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="css/styles.css?v=25">
   <script>
-    try { var s = JSON.parse(localStorage.getItem('almoxarife:prefs') || '{}'); if (s.tema === 'escuro') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+    try { var p = new URLSearchParams(location.search); var o = p.get('obra') || (p.get('demo') === '1' ? 'teste' : 'principal'); var k = (p.get('demo') === '1' ? 'almoxarife:demo:prefs' : 'almoxarife:prefs') + (o === 'principal' ? '' : ':' + o); var s = JSON.parse(localStorage.getItem(k) || '{}'); if (s.tema === 'escuro') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
   </script>
 </head>
 <body>
@@ -18,20 +17,23 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-  <script src="js/store.js?v=17"></script>
-  <script src="js/ui.js?v=17"></script>
-  <script src="js/nuvem.js?v=17"></script>
+  <script src="js/store.js?v=24"></script>
+  <script src="js/ui.js?v=25"></script>
+  <script src="js/nuvem.js?v=26"></script>
   <script src="js/fuzzy.js?v=17"></script>
   <script src="js/lote.js?v=17"></script>
   <script src="js/pages/painel.js?v=17"></script>
-  <script src="js/pages/produtos.js?v=17"></script>
+  <script src="js/pages/produtos.js?v=22"></script>
   <script src="js/pages/produto-detalhe.js?v=17"></script>
-  <script src="js/pages/categorias.js?v=17"></script>
-  <script src="js/pages/locais.js?v=17"></script>
-  <script src="js/pages/funcionarios.js?v=17"></script>
-  <script src="js/pages/historico.js?v=17"></script>
-  <script src="js/pages/relatorios.js?v=17"></script>
-  <script src="js/pages/configuracoes.js?v=17"></script>
-  <script src="js/app.js?v=17"></script>
+  <script src="js/pages/categorias.js?v=22"></script>
+  <script src="js/pages/locais.js?v=22"></script>
+  <script src="js/pages/funcionarios.js?v=22"></script>
+  <script src="js/pages/historico.js?v=22"></script>
+  <script src="js/pages/relatorios.js?v=22"></script>
+  <script src="js/pages/configuracoes.js?v=26"></script>
+  <script src="js/pages/empresas.js?v=26"></script>
+  <script src="js/pages/obras.js?v=26"></script>
+  <script src="js/demo.js?v=26"></script>
+  <script src="js/app.js?v=26"></script>
 </body>
 </html>

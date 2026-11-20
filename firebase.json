@@ -8,10 +8,21 @@
       "firebase.json",
       "firestore.rules",
       "**/.*",
+      "**/.*/**",
+      ".git/**",
+      ".firebase/**",
       "**/node_modules/**",
+      "tests/**",
+      ".impeccable/**",
+      ".agents/**",
+      ".codex/**",
+      ".idea/**",
+      "*.md",
+      "skills-lock.json",
       "README.md",
       "tavara-funcionalidades.md",
-      "firebase-debug.log"
+      "firebase-debug.log",
+      "firestore-debug.log"
     ],
     "headers": [
       {

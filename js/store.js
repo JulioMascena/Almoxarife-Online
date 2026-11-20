@@ -64,7 +64,7 @@
   /* ---------- Dados de exemplo (obra residencial) ---------- */
   function exemplo() {
     const s = vazio();
-    s.settings.obraNome = 'Residencial Exemplo';
+    s.settings.obraNome = 'Obra teste';
     let seed = 7;
     const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
 
@@ -108,12 +108,6 @@
     };
     loc('Almoxarifado central', 'almoxarifado', 'Térreo', 'em-andamento');
     const L = [
-      loc('Apto 1901', 'apartamento', '19', 'em-andamento'),
-      loc('Apto 1902', 'apartamento', '19', 'em-andamento'),
-      loc('Apto 1903', 'apartamento', '19', 'nao-iniciado'),
-      loc('Apto 1301', 'apartamento', '13', 'concluido'),
-      loc('Apto 1302', 'apartamento', '13', 'em-andamento'),
-      loc('Apto 1303', 'apartamento', '13', 'em-andamento'),
       loc('Salão de festas', 'area-comum', 'Térreo', 'em-andamento'),
       loc('Hall de entrada', 'area-comum', 'Térreo', 'nao-iniciado'),
       loc('Academia', 'area-comum', '1', 'nao-iniciado'),
@@ -121,6 +115,12 @@
       loc('Estacionamento G2', 'garagem', 'Subsolo 2', 'em-andamento'),
       loc('Fachada norte', 'externa', '', 'em-andamento'),
     ];
+
+    for (let andar = 1; andar <= 5; andar++) {
+      for (let posicao = 1; posicao <= 4; posicao++) {
+        L.push(loc(`Apto ${andar}0${posicao}`, 'apartamento', String(andar), andar === 1 ? 'concluido' : andar === 5 ? 'nao-iniciado' : 'em-andamento'));
+      }
+    }
 
     const func = (nome, funcao) => {
       const f = { id: uid(), nome, funcao, ativo: true, obs: '' };
@@ -135,7 +135,13 @@
       func('Antônio Rocha', 'Pedreiro'),
       func('Bruno Costa', 'Servente'),
     ];
-    const quando = (dias) => Date.now() - dias * 86400000 + Math.floor((rnd() - 0.5) * 6 * 3600000);
+    const quando = (dias) => {
+      const d = new Date();
+      d.setDate(d.getDate() - dias);
+      d.setHours(8 + Math.floor(rnd() * 9), Math.floor(rnd() * 60), 0, 0);
+      return Math.min(d.getTime(), Date.now());
+    };
+    const equipe = (categoriaId) => categoriaId === C.hid ? [F[2]] : categoriaId === C.ele ? [F[1]] : categoriaId === C.aca ? [F[3]] : categoriaId === C.pin ? [F[4]] : categoriaId === C.alv ? [F[5], F[6]] : F;
     const reg = (p, tipo, quantidade, dias, extra) => {
       s.movimentos.push(Object.assign({
         id: uid(), produtoId: p.id, produtoNome: p.nome, unidade: p.unidade, tipo, quantidade,
@@ -154,8 +160,10 @@
           const q = Math.max(1, Math.round(lote * (0.5 + rnd())));
           if (q <= p.quantidade) {
             p.quantidade -= q;
-            const f = F[Math.floor(rnd() * F.length)];
-            const destino = L[Math.floor(rnd() * L.length)].id;
+            const candidatos = equipe(categoriaId);
+            const f = candidatos[Math.floor(rnd() * candidatos.length)];
+            const destinos = L.filter((l) => l.status === 'em-andamento' || (l.status === 'concluido' && d > 45));
+            const destino = destinos[Math.floor(rnd() * destinos.length)].id;
             reg(p, 'saida', q, d, { localId: destino, funcionarioId: f.id, responsavel: f.nome });
           }
         }
@@ -165,6 +173,15 @@
           reg(p, 'entrada', q, d, { responsavel: 'Almoxarife', obs: 'Reposição' });
         }
       }
+      // Cenários de falta e reposição, com a saída correspondente no histórico.
+      const alvo = i === 10 ? 0 : i === 0 || i === 12 ? Math.floor(minimo / 2) : null;
+      if (alvo !== null && p.quantidade > alvo) {
+        const retirada = p.quantidade - alvo;
+        p.quantidade = alvo;
+        const f = equipe(categoriaId)[0];
+        const destino = L.find((l) => l.tipo === 'apartamento' && l.status === 'em-andamento');
+        reg(p, 'saida', retirada, 0, { localId: destino.id, funcionarioId: f.id, responsavel: f.nome, obs: 'Material destinado à frente de serviço' });
+      }
     });
     s.movimentos.sort((a, b) => b.criadoEm - a.criadoEm);
     return s;
@@ -173,7 +190,9 @@
   /* ---------- Estado e sincronização ----------
      Os dados da obra vêm do Firestore (Nuvem). Preferências do aparelho
      (tema, tabela compacta, lembrete de backup) ficam só neste navegador. */
-  const PREFS_KEY = 'almoxarife:prefs';
+  const params = new URLSearchParams(location.search);
+  const obraId = params.get('obra') || (params.get('demo') === '1' ? 'teste' : 'principal');
+  const PREFS_KEY = (params.get('demo') === '1' ? 'almoxarife:demo:prefs' : 'almoxarife:prefs') + (obraId === 'principal' ? '' : ':' + obraId);
   const COMPARTILHADAS = ['obraNome', 'estoqueMinimoPadrao'];
   let state = vazio();
   const listeners = [];
@@ -524,6 +543,7 @@
   }
 
   window.Store = {
+    gerarExemplo: exemplo,
     TIPOS_LOCAL, STATUS_LOCAL, TIPOS_MOV, UNIDADES, CORES, FUNCOES,
     load, aplicarRemoto, get state() { return state; }, onChange: (fn) => listeners.push(fn),
     uid, hoje, horaAgora, horaDe, compararMov,

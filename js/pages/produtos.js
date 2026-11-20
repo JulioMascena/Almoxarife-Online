@@ -29,22 +29,25 @@
     lerFiltroDaUrl();
     const s = Store.state;
     root.innerHTML = `
-      <div class="toolbar">
+      <div class="page-header">
+        <span class="page-header__summary">${s.produtos.length} produto(s)</span>
+        <button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Produto</button>
+      </div>
+      <div class="toolbar filter-toolbar">
         <label class="search">${icon('search')}<input class="input" type="search" placeholder="Buscar produtos..." value="${esc(filtros.busca)}" data-busca aria-label="Buscar produtos"></label>
-        <select class="select select-inline" data-cat aria-label="Filtrar por categoria">
+        <label class="field toolbar-filter"><span>Categoria</span><select class="select select-inline" data-cat aria-label="Filtrar por categoria">
           <option value="">Todas as categorias</option>
           ${s.categorias.map((c) => `<option value="${c.id}" ${filtros.categoria === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}
           <option value="__sem" ${filtros.categoria === '__sem' ? 'selected' : ''}>Sem categoria</option>
-        </select>
-        <select class="select select-inline" data-sit aria-label="Filtrar por situação">
+        </select></label>
+        <label class="field toolbar-filter"><span>Situação do estoque</span><select class="select select-inline" data-sit aria-label="Filtrar por situação">
           <option value="">Qualquer situação</option>
           <option value="baixo" ${filtros.situacao === 'baixo' ? 'selected' : ''}>Estoque baixo</option>
           <option value="zerado" ${filtros.situacao === 'zerado' ? 'selected' : ''}>Sem estoque</option>
-        </select>
+        </select></label>
         <span class="spacer"></span>
         <button class="btn btn-outline" data-lote ${s.produtos.length ? '' : 'disabled'}>${icon('upload', 'i-sm')}Lote CSV</button>
         <button class="btn btn-outline" data-mov ${s.produtos.length ? '' : 'disabled'}>${icon('swap', 'i-sm')}Movimentar</button>
-        <button class="btn btn-primary" data-add>${icon('plus', 'i-sm')}Adicionar Produto</button>
       </div>
       <div class="card card--flush" data-lista></div>`;
 
